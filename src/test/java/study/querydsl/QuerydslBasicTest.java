@@ -1,16 +1,23 @@
 package study.querydsl;
 
 
+import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.Predicate;
+import com.querydsl.core.types.Projections;
+import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import jakarta.persistence.Column;
 import jakarta.persistence.EntityManager;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.Commit;
 import org.springframework.transaction.annotation.Transactional;
+import study.querydsl.dto.MemberDto;
 import study.querydsl.entity.Member;
 import study.querydsl.entity.QMember;
 import study.querydsl.entity.QTeam;
@@ -256,8 +263,154 @@ public class QuerydslBasicTest {
 
 
 
+    // *****실무에서 많이 사용 - setter
+    @Test
+    public void findDtoBySetter() {
+        List<MemberDto> result = queryFactory
+                .select(Projections.bean(MemberDto.class,
+                        member.username,
+                        member.age))
+                .from(member)
+                .fetch();
+        for(MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+    }
 
 
 
+    // *****필드
+    @Test
+    public void findDtoByField() {
+        List<MemberDto> result = queryFactory
+                .select(Projections.fields(MemberDto.class,
+                        member.username,
+                        member.age))
+                .from(member)
+                .fetch();
+        for(MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+    }
+
+
+    @Test
+    public void findDtoByConstructor() {
+        List<MemberDto> result = queryFactory
+                .select(Projections.constructor(MemberDto.class,
+                        member.username,
+                        member.age))
+                .from(member)
+                .fetch();
+        for(MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+    }
+
+
+
+
+
+    // *** 동적 쿼리
+    @Test
+    public void dynamicQuery_BooleanBuilder() {
+        String usernameParam = "member1";
+        Integer agePararm = 10;
+
+        List<Member> result = searchMember1(usernameParam, agePararm);
+        assertThat(result.size()).isEqualTo(1);
+
+
+    }
+
+    private List<Member> searchMember1(String usernameCon, Integer ageCon) {
+
+        BooleanBuilder builder = new BooleanBuilder();
+        if (usernameCon != null) {
+            builder.and(member.username.eq(usernameCon));
+        }
+
+        if (ageCon != null) {
+            builder.and(member.age.eq(ageCon));
+        }
+
+        return queryFactory
+                .selectFrom(member)
+                .where(builder)
+                .fetch();
+    }
+
+
+
+
+
+
+    // ***** 동적 쿼리 - where 다중 파라미터 사용
+    @Test
+    public void dynamicQuery_WhereParam(){
+        String usernameParam = "member1";
+        Integer agePararm = 10;
+
+        List<Member> result = searchMember2(usernameParam, agePararm);
+        assertThat(result.size()).isEqualTo(1);
+
+    }
+
+    private List<Member> searchMember2(String usernameCon, Integer ageCon) {
+        return queryFactory
+                .selectFrom(member)
+                .where(usernameEq(usernameCon), ageEq(ageCon))
+                .fetch();
+    }
+
+    private BooleanExpression usernameEq(String usernameCon) {
+        return usernameCon != null ? member.username.eq(usernameCon) : null;
+    }
+
+    private BooleanExpression ageEq(Integer ageCon) {
+        return ageCon != null ? member.age.eq(ageCon) : null;
+    }
+
+    private BooleanExpression allEq(String usernameCon, Integer ageCon) {
+        return usernameEq(usernameCon).and(ageEq(ageCon));
+    }
+
+
+
+    // 수정 벌크 - 문제접 : 영속성 콘텍스트는 1차캐쉬 무시하고 바로 db로 들어감 , 즉 db와 영속성컨텍스트 상태가 안맞음 , 영속성 컨텍스트가 항상 우선권을 가짐
+    @Test
+    @Commit
+    public void bulkUpdate() {
+        long count = queryFactory
+                .update(member)
+                .set(member.username, "비회원")
+                .where(member.age.lt(28))
+                .execute();
+        //문제점 해결  - 초기화
+        em.flush();
+        em.clear();
+
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .fetch();
+    }
+
+
+    // *****벌크 연산
+    @Test
+    public void bulkAdd(){
+        long count = queryFactory
+                .update(member)
+                .set(member.age, member.age.add(1))
+                .execute();
+    }
+
+    @Test
+    public void bulkDelete() {
+        long count = queryFactory
+                .delete(member)
+                .where(member.age.gt(18))
+                .execute();
+    }
 
 }
